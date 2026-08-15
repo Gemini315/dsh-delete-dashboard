@@ -49,6 +49,7 @@ function harnessRuntimeRoot() {
     : path.join(__dirname, 'harness')
 }
 
+
 function harnessCliPath() {
   return path.join(
     harnessRuntimeRoot(),
@@ -64,7 +65,10 @@ function harnessNodePath() {
   return path.join(harnessRuntimeRoot(), 'runtime', 'node.exe')
 }
 
-function startHarness() {
+async function startHarness() {
+  const harnessHome = dataPath('harness-home')
+  fs.mkdirSync(harnessHome, { recursive: true })
+
   return new Promise((resolve, reject) => {
     const cliPath = harnessCliPath()
     if (!fs.existsSync(cliPath)) {
@@ -77,9 +81,6 @@ function startHarness() {
       reject(new Error(`Bundled Node.js runtime was not found: ${nodePath}`))
       return
     }
-
-    const harnessHome = dataPath('harness-home')
-    fs.mkdirSync(harnessHome, { recursive: true })
 
     writeLog(`Starting Harness from ${cliPath} with ${nodePath}`)
     harnessProcess = spawn(nodePath, [cliPath, 'web', '--port', '0'], {

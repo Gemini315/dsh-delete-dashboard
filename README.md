@@ -1,5 +1,17 @@
 # DeepSeek Harness Desktop
 
+## ✨ 新增功能：删除会话消息
+
+本封装基于带 `session.truncate` 功能的上游 Harness 构建，**支持在对话界面删除任意一条消息**（删除该条及之后的所有内容）：
+
+- 用户消息 / AI 回复悬停出现 🗑️ 按钮，点击即删
+- 删除是**截断式**：该消息及之后全部移除，AI 不再引用已删内容
+- 删除会正确处理会话内存、inbox 队列与持久化日志，删除后自动恢复会话
+
+## 🚫 视觉识别说明
+
+本开源版本**不包含视觉识别（智谱 GLM）相关代码与密钥逻辑**。如需视觉识别，请通过 DeepSeek Harness 的**插件机制**安装对应视觉插件，并在插件/模型中配置你自己的 API Key。
+
 [English](README.en.md) · [下载 Releases](https://github.com/cc1252/deepseek-harness-desktop/releases)
 
 一个面向 Windows 的、完整开源的 **DeepSeek Harness 非官方 Electron 桌面封装**。

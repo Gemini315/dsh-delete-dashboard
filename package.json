@@ -25,7 +25,9 @@
     "build:portable": "npm run setup && electron-builder --win portable --x64 --publish never",
     "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1"
   },
-  "dependencies": {},
+  "dependencies": {
+    "koffi": "^3.1.5"
+  },
   "devDependencies": {
     "electron": "43.4.0",
     "electron-builder": "26.15.3"
