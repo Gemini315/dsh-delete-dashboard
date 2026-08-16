@@ -117,6 +117,13 @@ A: 绿色版直接删除解压目录即可；如需清空数据，删除 `%APPDA
 - `preload.js`：IPC 桥接
 - 构建：`npm run build:windows`（electron-builder）
 
+## 来源与许可
+
+- 本项目的桌面外壳基础来自开源项目 [cc1252/deepseek-harness-desktop](https://github.com/cc1252/deepseek-harness-desktop)（MIT License，Copyright (c) DeepSeek Harness Desktop contributors）。
+- 新增功能（会话消息删除、会话仪表盘）由本仓库作者开发。
+- 本项目基于 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（官方开源）构建，遵循其许可条款。
+- 本项目整体以 [MIT](LICENSE) 许可发布，保留上述上游版权声明。
+
 ## License
 
 [MIT](LICENSE)
