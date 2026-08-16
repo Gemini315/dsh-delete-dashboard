@@ -88,9 +88,13 @@ npm run build:windows
 
 ## 五、安全说明
 
+- **只从本仓库（GitHub Releases）下载安装包**：https://github.com/Gemini315/dsh-delete-dashboard/releases
+  - 警惕任何自称「DeepSeek Harness Desktop」的**第三方修改版 / 网盘转存版**——可能被植入后门窃取你的 API Key。
+  - 安全做法：**只信任本官方仓库**，下载后核对版本号与文件名。
 - 本项目不开采、不上报任何数据；代码全部开源，可自行审计。
-- 不要把你的 `.credentials.yaml`、`.env` 或 API Key 提交到任何公开仓库（本仓库已通过 .gitignore 与安全检查排除）。
-- 请勿在不可信项目目录下以管理员身份运行。
+- **不要**把你的 `.credentials.yaml`、`.env` 或 API Key 提交到任何公开仓库、截图分享或发给任何人（本仓库已通过 .gitignore 与安全检查排除）。
+- **不要**在不可信项目目录下以管理员身份运行。
+- API Key 只保存在你自己电脑的本地配置中（`%APPDATA%\deepseek-harness-desktop\harness-home\.credentials.yaml`），不会上传到任何服务器。
 
 ---
 
