@@ -6,6 +6,8 @@ harness/runtime/
 
 # Build and QA output
 dist/
+dist-next/
+.cache/
 qa/
 build/THIRD_PARTY_LICENSES.txt
 

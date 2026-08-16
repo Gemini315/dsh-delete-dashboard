@@ -216,6 +216,132 @@
       </section>
     </main>
 
+    <button class="dashboard-tab" id="dashboard-tab" type="button" title="仪表盘" aria-label="仪表盘">📊</button>
+    <aside id="dashboard" class="dashboard closed" aria-hidden="true">
+      <div class="dashboard-head">
+        <h3 class="dashboard-title">会话仪表盘</h3>
+        <button type="button" id="d-close" class="dashboard-close" title="关闭仪表盘" aria-label="关闭仪表盘">✕</button>
+      </div>
+      <section class="dashboard-body">
+        <h3 class="dashboard-title">会话仪表盘</h3>
+        <div class="metric"><span class="metric-label">余额 (CNY)</span><b id="d-balance">—</b></div>
+        <div class="metric"><span class="metric-label">累计 tokens</span><b id="d-tokens">—</b></div>
+        <div class="metric"><span class="metric-label">会话费用 (CNY)</span><b id="d-cost">—</b></div>
+        <div class="metric"><span class="metric-label">请求数</span><b id="d-requests">—</b></div>
+        <div class="metric"><span class="metric-label">运行时间</span><b id="d-time">—</b></div>
+        <div class="dashboard-actions">
+          <button type="button" id="d-refresh" class="dashboard-button">刷新数据</button>
+        </div>
+        <p class="dashboard-note">余额来自 DeepSeek 账户；费用按 token 用量估算。</p>
+      </section>
+    </aside>
+
+    <style>
+      :root {
+        --dash-bg: #1e2330;
+        --dash-border: #2c3242;
+        --dash-title: #e8eaf0;
+        --dash-label: #9aa1ad;
+        --dash-value: #e8eaf0;
+        --dash-row: #262c3a;
+        --dash-btn-bg: #2c3242;
+        --dash-btn-border: #3a4256;
+        --dash-btn-hover: #343c50;
+        --dash-shadow: rgba(0, 0, 0, 0.4);
+      }
+      body { background: var(--dash-bg); }
+      .dashboard {
+        position: fixed;
+        top: 42px;
+        right: 0;
+        bottom: 0;
+        width: 288px;
+        background: var(--dash-bg);
+        border-left: 1px solid var(--dash-border);
+        box-shadow: -8px 0 24px var(--dash-shadow);
+        transform: translateX(100%);
+        transition: transform 0.22s ease;
+        z-index: 40;
+        display: flex;
+        flex-direction: column;
+      }
+      .dashboard.open { transform: translateX(0); }
+      .dashboard-tab {
+        position: fixed;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 34px;
+        height: 84px;
+        border: 1px solid var(--dash-border);
+        border-right: none;
+        border-radius: 10px 0 0 10px;
+        background: var(--dash-bg);
+        color: var(--dash-title);
+        font-size: 16px;
+        cursor: pointer;
+        z-index: 41;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: right 0.22s ease;
+      }
+      .dashboard-tab:hover { background: var(--dash-btn-hover); }
+      .dashboard-tab.on-panel {
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        font-size: 15px;
+        transform: none;
+        transition: none;
+      }
+      .dashboard-body { padding: 16px; overflow-y: auto; }
+      .dashboard-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 12px 0 16px;
+      }
+      .dashboard-head .dashboard-title { margin: 0; }
+      .dashboard-close {
+        width: 26px;
+        height: 26px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--dash-label);
+        font-size: 13px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .dashboard-close:hover { background: var(--dash-btn-hover); color: var(--dash-title); }
+      .dashboard-title { margin: 0 0 14px; font-size: 15px; color: var(--dash-title); }
+      .metric {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        padding: 9px 0;
+        border-bottom: 1px solid var(--dash-row);
+      }
+      .metric-label { font-size: 13px; color: var(--dash-label); }
+      .metric b { font-size: 15px; color: var(--dash-value); font-variant-numeric: tabular-nums; }
+      .dashboard-actions { margin-top: 16px; }
+      .dashboard-button {
+        width: 100%;
+        padding: 8px 0;
+        border: 1px solid var(--dash-btn-border);
+        border-radius: 6px;
+        background: var(--dash-btn-bg);
+        color: var(--dash-title);
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .dashboard-button:hover { background: var(--dash-btn-hover); }
+      .dashboard-note { margin-top: 12px; font-size: 11px; color: var(--dash-label); line-height: 1.5; }
+    </style>
+
     <script>
       const titlebar = document.getElementById('titlebar')
       const title = document.getElementById('page-title')
@@ -250,6 +376,88 @@
       window.desktopWindow.onPageTitle(nextTitle => {
         title.textContent = nextTitle || 'DeepSeek Harness'
       })
+
+      // ---- Dashboard side panel ----
+      const dashboard = document.getElementById('dashboard')
+      const toggle = document.getElementById('dashboard-tab')
+      const positionTab = (open) => {
+        toggle.classList.toggle('on-panel', open)
+        if (open) {
+          toggle.style.right = '10px'
+          toggle.style.top = '52px'
+        } else {
+          toggle.style.right = '0'
+          toggle.style.top = ''
+        }
+      }
+      const fmt = (n) => Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+      const setMetric = (id, text) => {
+        const el = document.getElementById(id)
+        if (el) el.textContent = text
+      }
+
+      async function refreshDashboard() {
+        try {
+          const data = await window.desktopWindow.getDashboardData()
+          if (data.theme) {
+            const root = document.documentElement
+            const set = (n, v) => { if (v) root.style.setProperty(n, v) }
+            set('--dash-bg', data.theme.panel)
+            set('--dash-border', data.theme.border)
+            set('--dash-title', data.theme.text)
+            set('--dash-value', data.theme.text)
+            set('--dash-label', data.theme.label)
+            set('--dash-row', data.theme.border)
+            set('--dash-btn-bg', data.theme.panel)
+            set('--dash-btn-border', data.theme.border)
+          }
+          setMetric('d-balance', data.balance !== null ? fmt(data.balance) : 'N/A')
+          setMetric('d-tokens', fmt(data.tokens))
+          setMetric('d-cost', data.cost !== null ? fmt(data.cost) : 'N/A')
+          setMetric('d-requests', fmt(data.requests))
+          setMetric('d-time', data.runtimeText || '—')
+        } catch (error) {
+          setMetric('d-balance', '错误')
+        }
+      }
+
+      document.getElementById('d-close').addEventListener('click', async () => {
+        const open = await window.desktopWindow.toggleDashboard()
+        dashboard.classList.toggle('open', open)
+        dashboard.classList.toggle('closed', !open)
+        dashboard.setAttribute('aria-hidden', String(!open))
+        positionTab(open)
+      })
+
+      toggle.addEventListener('click', async () => {
+        const open = await window.desktopWindow.toggleDashboard()
+        dashboard.classList.toggle('open', open)
+        dashboard.classList.toggle('closed', !open)
+        dashboard.setAttribute('aria-hidden', String(!open))
+        toggle.title = open ? '收起仪表盘' : '展开仪表盘'
+        positionTab(open)
+        if (open) refreshDashboard()
+      })
+
+      window.desktopWindow.getDashboardState().then(open => {
+        dashboard.classList.toggle('open', open)
+        dashboard.classList.toggle('closed', !open)
+        dashboard.setAttribute('aria-hidden', String(!open))
+        positionTab(open)
+        toggle.title = open ? '收起仪表盘' : '展开仪表盘'
+      })
+
+      document.getElementById('d-refresh').addEventListener('click', refreshDashboard)
+
+      // 会话切换时由主进程推送刷新事件：仅切换就立即重算当前会话统计（无需发消息）。
+      window.desktopWindow.onDashboardRefresh(() => {
+        if (dashboard.classList.contains('open')) refreshDashboard()
+      })
+
+      // 自动刷新：仪表盘展开时每 60 秒刷新一次数据。
+      setInterval(() => {
+        if (dashboard.classList.contains('open')) refreshDashboard()
+      }, 15000)
     </script>
   </body>
 </html>

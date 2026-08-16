@@ -1,157 +1,122 @@
 # DeepSeek Harness Desktop
 
-## ✨ 新增功能：删除会话消息
+一个面向 Windows 的 **DeepSeek Harness 非官方 Electron 桌面封装**，开箱即用：
 
-本封装基于带 `session.truncate` 功能的上游 Harness 构建，**支持在对话界面删除任意一条消息**（删除该条及之后的所有内容）：
-
-- 用户消息 / AI 回复悬停出现 🗑️ 按钮，点击即删
-- 删除是**截断式**：该消息及之后全部移除，AI 不再引用已删内容
-- 删除会正确处理会话内存、inbox 队列与持久化日志，删除后自动恢复会话
-
-## 🚫 视觉识别说明
-
-本开源版本**不包含视觉识别（智谱 GLM）相关代码与密钥逻辑**。如需视觉识别，请通过 DeepSeek Harness 的**插件机制**安装对应视觉插件，并在插件/模型中配置你自己的 API Key。
-
-[English](README.en.md) · [下载 Releases](https://github.com/cc1252/deepseek-harness-desktop/releases)
-
-一个面向 Windows 的、完整开源的 **DeepSeek Harness 非官方 Electron 桌面封装**。
-它启动官方 `@deepseek-ai/dsh` 本地 Web 服务，再用隔离的 Electron
-`WebContentsView` 加载官方界面；桌面壳只负责进程生命周期、窗口、安全导航和自绘标题栏。
+- 基于官方 `@deepseek-ai/dsh`（本地 Agent 服务），自带完整运行环境（**无需安装 Node.js / 无需命令行**）
+- 官方网页版界面 + 本地窗口，无浏览器限制
+- **新增：会话消息删除**（删除任意一条消息及其之后内容）
+- **新增：会话仪表盘**（余额 / token / 费用 / 请求数 / 运行时间，跟随界面主题）
+- 你的数据全部在本地（会话日志、配置、密钥）
 
 > [!IMPORTANT]
 > 本项目不是 DeepSeek 官方产品，也不提供模型额度或绕过 API 鉴权。
 > DeepSeek Harness 仍处于 Developer Preview，请勿在高权限模式下打开不可信项目。
 
-![DeepSeek Harness Desktop](docs/screenshot.png)
+---
 
-## 下载
+## 一、下载与安装（推荐）
 
-在 [GitHub Releases](https://github.com/cc1252/deepseek-harness-desktop/releases) 中提供：
+### 方式 A：下载安装包（推荐，带全部功能）
 
-- `DeepSeek-Harness-Desktop-Setup-0.1.0-x64.exe`：完整 Windows 安装包；
-- `DeepSeek-Harness-Desktop-Portable-0.1.0-x64.exe`：无需安装的便携单文件；
-- `DeepSeek-Harness-Desktop-Source-0.1.0.zip`：与发布对应的源码快照；
-- `SHA256SUMS.txt`：发布文件校验值；
-- GitHub 自动生成的源码归档。
+1. 打开本仓库 **Releases** 页面，下载最新版：
+   - `DeepSeek-Harness-Desktop-vX.Y.Z-win-x64.zip`（绿色版，解压即用）
+2. 解压到任意目录（**建议 D 盘等非系统盘**），双击 `DeepSeek Harness Desktop.exe` 启动。
 
-安装包没有商业代码签名，因此 Windows 可能显示“未知发布者”。
-安装版使用当前用户的标准应用目录，以避开 Windows 传统路径长度限制；如需放在任意目录，
-请使用便携版或 `win-unpacked` 构建。
+### 方式 B：从源码构建
 
-## 当前锁定版本
-
-| 组件 | 版本 |
-| --- | --- |
-| DeepSeek Harness (`@deepseek-ai/dsh`) | `0.1.0-rc.6` |
-| Electron | `43.4.0` |
-| 内置 Node.js | `24.19.0` |
-| electron-builder | `26.15.3` |
-
-版本被明确锁定在两个 `package-lock.json` 中。准备脚本从 Node.js 官方站点下载运行时，
-并在解压前同时比对仓库内固定值和官方 `SHASUMS256.txt`。当前 Windows x64 压缩包的
-SHA-256 为 `57F71AB3652E797D84ACDDC79C81CC9FF1C6DDB2A1974CDB83F00FEE9BFF4C73`。
-
-## 从源码运行
-
-要求：Windows 10/11 x64、Node.js 24、npm 和 PowerShell 5 或更高版本。
+> 适合开发者。注意：源码构建默认使用官方 dsh 基础（**不含「删除消息」等定制功能**，定制功能随 Release 安装包提供）。
 
 ```powershell
 git clone https://github.com/cc1252/deepseek-harness-desktop.git
 cd deepseek-harness-desktop
-npm ci
-npm run setup
-npm run start
-```
-
-也可以用 `npm run dev` 自动执行运行时准备后启动。
-
-`npm run setup` 会：
-
-1. 按 `harness/package-lock.json` 安装官方 Harness 及其完整运行依赖；
-2. 下载并校验官方 Node.js Windows x64 运行时；
-3. 从 Harness npm 包提取官方鲸鱼图标；
-4. 生成所有随包 npm 依赖的第三方许可证清单。
-
-## 构建 Windows 发布包
-
-```powershell
-npm ci
+npm install
+npm run setup        # 下载并准备 dsh 运行时
 npm run build:windows
 ```
 
-生成结果位于 `dist/`：
+---
 
-- 标准 NSIS 安装包；
-- 便携单文件；
-- `win-unpacked/` 快速启动目录；
-- `SHA256SUMS.txt`。
+## 二、首次启动与配置
 
-单独构建也可以使用：
+1. 启动桌面版，等待本地服务就绪，进入对话界面。
+2. 打开 **设置（Settings）> 模型（Models）**，配置你的 **DeepSeek API Key**（或点击「开始使用」按引导填写）。
+   - 也可以把 key 写到 `%APPDATA%\deepseek-harness-desktop\harness-home\.credentials.yaml`：
+     ```yaml
+     DEEPSEEK_API_KEY: sk-xxxxxxxx
+     ```
+3. 选择模型后即可开始对话。
 
-```powershell
-npm run build:dir
-npm run build:installer
-npm run build:portable
-```
+> 密钥只保存在**你自己电脑**的本地配置中，不会上传到任何服务器，也不会出现在本项目代码里。
 
-## 结构
+---
 
-```text
-.
-├─ main.js                         Electron 主进程、Harness 子进程和内容视图
-├─ preload.js                      最小权限窗口控制桥
-├─ shell.html                      自绘标题栏和启动画面
-├─ build/deepseek-harness.svg      官方 Harness 包中的鲸鱼图标
-├─ harness/
-│  ├─ package.json                 官方 CLI 的独立运行时依赖
-│  └─ package-lock.json            完整锁文件
-├─ scripts/
-│  ├─ prepare-runtime.ps1          一键准备、下载和校验
-│  ├─ build-windows.ps1            安装版 + 便携版构建
-│  └─ generate-third-party-notices.mjs
-└─ .github/workflows/              源码检查和 Release 自动构建
-```
+## 三、功能说明
 
-架构细节参见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+### 1. 删除会话消息 🗑️
 
-## API Key 与数据
+- 鼠标悬停在任意**用户消息**或 **AI 回复**上，出现 🗑️ 按钮，点击即可删除。
+- 删除是**截断式**：该条消息及其之后的所有内容都会被移除，AI 之后不会再引用已删除的内容。
+- 删除会同步更新会话内存、队列与持久化日志，删除后自动恢复会话，可继续正常对话。
 
-应用会继承启动进程的环境变量，因此已有 `DEEPSEEK_API_KEY` 时可以直接使用。
-也可以在 Harness 左下角的“设置”→“Models”中配置供应商。本项目不保存、上传或内置 API Key。
+### 2. 会话仪表盘 📊
 
-用户数据和日志保存在：
+- 窗口右侧边缘有一个竖条标签（📊），点击展开侧边仪表盘；再点（或点面板内 ✕）收起。
+- 显示内容：
+  - **余额 (CNY)**：DeepSeek 账户实时余额（只读查询，不消耗额度）
+  - **累计 tokens**、**会话费用 (CNY)**、**请求数**、**运行时间**：**只统计当前打开的会话**（切换/新建会话自动跟随，从零开始）
+- 每 15 秒自动刷新；余额每 60 秒查询一次，避免频繁请求外部 API。
+- 外观跟随 dsh 界面主题（浅色 / 深色，在通用设置中切换）。
 
-```text
-%APPDATA%\deepseek-harness-desktop\harness-home
-%APPDATA%\deepseek-harness-desktop\logs\desktop.log
-```
+### 3. 视觉识别（可选）
 
-卸载程序默认保留用户数据，避免误删会话。
+本桌面版**不含**智谱 GLM 视觉识别（出于密钥安全，已移除相关代码）。如需要图片识别，请通过 dsh 的插件机制安装视觉类插件，并在插件中配置你自己的 API Key。
 
-## 安全边界
+---
 
-- Harness 服务只监听 `127.0.0.1` 的随机端口；
-- 官方页面运行在 `sandbox: true`、`contextIsolation: true`、`nodeIntegration: false` 的内容视图中；
-- 自绘标题栏只能通过受限 IPC 请求最小化、最大化/还原和关闭；
-- 非本地导航交给系统浏览器，不允许页面直接访问 Node.js；
-- 单实例退出时同步停止 Harness 子进程。
+## 四、数据与隐私
 
-## 上游、图标和许可证
+| 项目 | 位置 | 说明 |
+|---|---|---|
+| 会话日志 | `%APPDATA%\deepseek-harness-desktop\harness-home\sessions\` | zstd 压缩，本地存储 |
+| API Key | `%APPDATA%\deepseek-harness-desktop\harness-home\.credentials.yaml` | 仅本地，不入代码 |
+| 应用日志 | `%APPDATA%\deepseek-harness-desktop\logs\` | 本地排障用 |
 
-壳代码采用 [MIT License](LICENSE)。DeepSeek Harness 及官方鲸鱼图标归上游项目所有，
-按其 MIT 许可证使用和署名。完整信息见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- 所有对话与密钥**只在本地**，不会上传。
+- 仪表盘对会话日志**只读**，不会修改或删除任何数据。
 
-- 上游项目：[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)
-- Electron：[electron/electron](https://github.com/electron/electron)
-- Node.js：[nodejs/node](https://github.com/nodejs/node)
+---
 
-## 贡献
+## 五、安全说明
 
-欢迎 Issue 和 Pull Request。提交前请运行：
+- 本项目不开采、不上报任何数据；代码全部开源，可自行审计。
+- 不要把你的 `.credentials.yaml`、`.env` 或 API Key 提交到任何公开仓库（本仓库已通过 .gitignore 与安全检查排除）。
+- 请勿在不可信项目目录下以管理员身份运行。
 
-```powershell
-npm ci
-npm run check
-```
+---
 
-参见 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [SECURITY.md](SECURITY.md)。
+## 六、常见问题
+
+**Q: 启动后一直「正在启动」？**
+A: 首次启动需要准备本地运行时，请耐心等待；若超过 90 秒仍未就绪，关闭后重试。检查杀毒软件是否拦截了本地端口。
+
+**Q: 删除消息后 AI 还会复述已删内容？**
+A: 请使用 **Releases 安装包**（方式 A）——源码构建不含删除功能。若确认是安装包，删除后新提问不应再引用已删消息。
+
+**Q: 仪表盘显示的不是当前会话？**
+A: 仪表盘跟随当前打开的会话；切换会话后 15 秒内自动更新。新建会话后请先打开/发送一条消息。
+
+**Q: 怎么卸载？**
+A: 绿色版直接删除解压目录即可；如需清空数据，删除 `%APPDATA%\deepseek-harness-desktop`。
+
+---
+
+## 七、开发
+
+- `main.js`：Electron 主进程（窗口、dsh 进程管理、仪表盘、IPC）
+- `shell.html`：窗口外壳（标题栏、仪表盘 UI）
+- `preload.js`：IPC 桥接
+- 构建：`npm run build:windows`（electron-builder）
+
+## License
+
+[MIT](LICENSE)

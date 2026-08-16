@@ -17,6 +17,9 @@ const path = require('node:path')
 const PRODUCT_NAME = 'DeepSeek Harness Desktop'
 const TITLE_BAR_HEIGHT = 42
 const STARTUP_TIMEOUT_MS = 90_000
+const DASHBOARD_WIDTH = 288
+const DASHBOARD_PRICES = { inputPerM: 2, outputPerM: 8 }
+let dashboardOpen = false
 
 let mainWindow
 let harnessView
@@ -245,10 +248,12 @@ function setupWindowControlIpc() {
 function layoutHarnessView() {
   if (!mainWindow || mainWindow.isDestroyed() || !harnessView) return
   const [width, height] = mainWindow.getContentSize()
+  // 展开时预留仪表盘宽度；收起时预留右侧竖条标签的宽度，保证标签不被遮挡。
+  const reserved = dashboardOpen ? DASHBOARD_WIDTH : 34
   harnessView.setBounds({
     x: 0,
     y: TITLE_BAR_HEIGHT,
-    width: Math.max(0, width),
+    width: Math.max(0, width - reserved),
     height: Math.max(0, height - TITLE_BAR_HEIGHT),
   })
 }
@@ -486,3 +491,285 @@ app.on('before-quit', () => {
 })
 
 app.on('window-all-closed', () => app.quit())
+
+// ---------------------------------------------------------------------------
+// 会话仪表盘（只统计当前会话）：余额来自 DeepSeek 账户，其余指标仅针对
+// 当前打开的会话（新开会话从零开始）。
+// ---------------------------------------------------------------------------
+const ZSTD_MAGIC = 0xFD2FB528
+
+/** 解析输入中的所有 zstd 帧范围（上游同款逻辑）。 */
+function scanZstdFrames(buffer) {
+  const frames = []
+  let offset = 0
+  while (offset < buffer.length) {
+    const start = offset
+    if (buffer.length - offset < 4) return frames
+    if (buffer.readUInt32LE(offset) !== ZSTD_MAGIC) throw new Error(`invalid zstd magic at byte ${offset}`)
+    offset += 4
+    if (offset === buffer.length) return frames
+    const descriptor = buffer.readUInt8(offset)
+    offset += 1
+    if ((descriptor & 0x18) !== 0) throw new Error('reserved frame-header bit')
+    const contentSizeFlag = descriptor >>> 6
+    const singleSegment = (descriptor & 0x20) !== 0
+    const checksum = (descriptor & 0x04) !== 0
+    const dictionaryFlag = descriptor & 0x03
+    const dictionaryBytes = dictionaryFlag === 3 ? 4 : dictionaryFlag
+    const contentSizeBytes = contentSizeFlag === 0 ? (singleSegment ? 1 : 0) : 1 << contentSizeFlag
+    const remainingHeaderBytes = (singleSegment ? 0 : 1) + dictionaryBytes + contentSizeBytes
+    if (buffer.length - offset < remainingHeaderBytes) return frames
+    offset += remainingHeaderBytes
+    for (;;) {
+      if (buffer.length - offset < 3) return frames
+      const blockHeader = buffer.readUIntLE(offset, 3)
+      offset += 3
+      const lastBlock = (blockHeader & 1) !== 0
+      const blockType = (blockHeader >>> 1) & 0x03
+      const blockSize = blockHeader >>> 3
+      if (blockType === 0x03) throw new Error('reserved block type')
+      const payloadBytes = blockType === 0x01 ? 1 : blockSize
+      if (buffer.length - offset < payloadBytes) return frames
+      offset += payloadBytes
+      if (lastBlock) break
+    }
+    if (checksum) {
+      if (buffer.length - offset < 4) return frames
+      offset += 4
+    }
+    frames.push(buffer.subarray(start, offset))
+  }
+  return frames
+}
+
+/** 在 sessions 根下递归查找指定会话的日志文件。 */
+async function findSessionArtifact(sessionsRoot, sessionId) {
+  let entries
+  try { entries = await fs.promises.readdir(sessionsRoot, { withFileTypes: true }) } catch { return null }
+  for (const entry of entries) {
+    const full = path.join(sessionsRoot, entry.name)
+    if (entry.isDirectory()) {
+      if (entry.name === sessionId) {
+        const zstd = path.join(full, 'session.jsonl.zstd')
+        const plain = path.join(full, 'session.jsonl')
+        try { await fs.promises.access(zstd); return zstd } catch { /* fall through */ }
+        try { await fs.promises.access(plain); return plain } catch { /* keep scanning */ }
+      }
+      const nested = await findSessionArtifact(full, sessionId)
+      if (nested) return nested
+    }
+  }
+  return null
+}
+
+/** 只统计指定会话的 tokens/请求/时间/费用（新开会话从零开始）。 */
+async function readSessionStats(sessionId) {
+  const sessionsRoot = path.join(dataPath('harness-home'), 'sessions')
+  const artifact = await findSessionArtifact(sessionsRoot, sessionId)
+  if (!artifact) return { tokens: 0, cost: null, requests: 0, runtimeText: '—' }
+  let promptTokens = 0
+  let completionTokens = 0
+  let requests = 0
+  let firstTime = Infinity
+  let lastTime = 0
+  try {
+    let text
+    if (artifact.endsWith('.zstd')) {
+      const { zstdDecompress } = require('node:zlib')
+      const { promisify } = require('node:util')
+      const decompress = promisify(zstdDecompress)
+      const raw = await fs.promises.readFile(artifact)
+      let out = ''
+      for (const frame of scanZstdFrames(raw)) out += (await decompress(frame)).toString('utf8')
+      text = out
+    } else {
+      text = await fs.promises.readFile(artifact, 'utf8')
+    }
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue
+      let event
+      try { event = JSON.parse(line) } catch { continue }
+      const type = event && event.type
+      if (type === 'user/message') requests++
+      else if (type === 'assistant/chunk') {
+        const chunk = event && event.data && event.data.chunk
+        if (chunk && chunk.type === 'usage' && chunk.usage) {
+          promptTokens += Number(chunk.usage.inputTokens ?? 0) || 0
+          completionTokens += Number(chunk.usage.outputTokens ?? 0) || 0
+        }
+      }
+      if (typeof event.time === 'number') {
+        if (event.time < firstTime) firstTime = event.time
+        if (event.time > lastTime) lastTime = event.time
+      }
+    }
+  } catch { /* 统计失败时返回零值 */ }
+  const total = promptTokens + completionTokens
+  const cost = promptTokens / 1e6 * DASHBOARD_PRICES.inputPerM + completionTokens / 1e6 * DASHBOARD_PRICES.outputPerM
+  const runtimeMs = lastTime - firstTime
+  const runtimeText = runtimeMs > 0 ? `${Math.floor(runtimeMs / 60000)}分${Math.floor((runtimeMs % 60000) / 1000)}秒` : '—'
+  return { tokens: total, cost, requests, runtimeText }
+}
+
+/** 查询当前会话：优先读 harness 前端暴露的当前会话，失败时回退到 session.list 最近活跃。 */
+async function getCurrentSessionId() {
+  // 前端 sessions.open() 时设置 window.__dshCurrentSession（上游 runtime 已注入）。
+  try {
+    if (harnessView && !harnessView.webContents.isDestroyed()) {
+      const value = await harnessView.webContents.executeJavaScript('window.__dshCurrentSession || null', true)
+      if (value && typeof value === 'string') return value
+    }
+  } catch { /* 前端不可达时走 session.list 回退 */ }
+  if (!harnessOrigin) return null
+  try {
+    const response = await fetch(harnessOrigin + '/api/session.list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'dash-list', method: 'session.list', payload: {} }),
+    })
+    const body = await response.json()
+    const items = body && body.result && body.result.value && body.result.value.items
+    if (!items || !items.length) return null
+    let best = items[0]
+    for (const item of items) { if (item.updatedAt > best.updatedAt) best = item }
+    return best.sessionId || null
+  } catch { return null }
+}
+
+/** 查询 DeepSeek 账户余额（全局实际值）。 */
+async function fetchDeepSeekBalance() {
+  let key = ''
+  try {
+    const text = await fs.promises.readFile(path.join(dataPath('harness-home'), '.credentials.yaml'), 'utf8')
+    const line = text.split('\n').find(l => l.startsWith('DEEPSEEK_API_KEY:'))
+    if (line) key = line.split(/:\s*/)[1].trim().replace(/^["']|["']$/g, '')
+  } catch { /* 无凭据文件时跳过 */ }
+  if (!key) return null
+  try {
+    const response = await fetch('https://api.deepseek.com/user/balance', {
+      headers: { Authorization: `Bearer ${key}` },
+    })
+    if (!response.ok) return null
+    const body = await response.json()
+    const total = body && body.balance_infos && body.balance_infos[0] && body.balance_infos[0].total_balance
+    return total === undefined || total === null ? null : Number(total)
+  } catch { return null }
+}
+
+/** 注册仪表盘 IPC（可在模块加载时注册，event.sender 校验窗口）。 */
+let lastBalanceFetch = 0
+let cachedBalance = null
+let statsCache = { sessionId: null, mtimeMs: 0, stats: null }
+
+function registerDashboardIpc() {
+  ipcMain.handle('desktop:dashboard-data', async event => {
+    if (mainWindow && !mainWindow.isDestroyed() && event.sender !== mainWindow.webContents) return null
+    try {
+      const sessionId = await getCurrentSessionId()
+      // 会话统计缓存：文件未变化就不重读（避免反复解压大日志）。
+      let stats
+      if (sessionId) {
+        const artifact = await findSessionArtifact(path.join(dataPath('harness-home'), 'sessions'), sessionId)
+        if (artifact) {
+          const stat = await fs.promises.stat(artifact)
+          if (statsCache.sessionId === sessionId && statsCache.mtimeMs === stat.mtimeMs) {
+            stats = statsCache.stats
+          } else {
+            stats = await readSessionStats(sessionId)
+            statsCache = { sessionId, mtimeMs: stat.mtimeMs, stats }
+          }
+        } else {
+          stats = await readSessionStats(sessionId)
+        }
+      } else {
+        stats = { tokens: 0, cost: null, requests: 0, runtimeText: '—' }
+      }
+      // 余额缓存 60 秒（避免频繁调外部 API）。
+      const now = Date.now()
+      if (now - lastBalanceFetch > 60_000) {
+        cachedBalance = await fetchDeepSeekBalance()
+        lastBalanceFetch = now
+      }
+      // 读取 harness 前端当前主题 token（跟随 dsh 通用设置里的浅色/深色）。
+      let theme = null
+      try {
+        if (harnessView && !harnessView.webContents.isDestroyed()) {
+          theme = await harnessView.webContents.executeJavaScript(`(() => {
+            const s = getComputedStyle(document.documentElement)
+            const v = (n) => s.getPropertyValue(n).trim()
+            return {
+              panel: v('--dsw-alias-bg-layer-1') || v('--dsw-alias-bg-base'),
+              border: v('--dsw-alias-border-l1'),
+              text: v('--dsw-alias-label-primary'),
+              label: v('--dsw-alias-label-secondary'),
+            }
+          })()`, true)
+        }
+      } catch { /* 前端不可达时保持默认主题 */ }
+      return { ...stats, balance: cachedBalance, sessionId, theme }
+    } catch (error) {
+      writeLog(`[desktop:dashboard] error: ${error.message}`)
+      return { tokens: 0, cost: null, requests: 0, runtimeText: '—', balance: null, sessionId: null }
+    }
+  })
+
+  ipcMain.handle('desktop:dashboard-toggle', async event => {
+    if (mainWindow && !mainWindow.isDestroyed() && event.sender !== mainWindow.webContents) return dashboardOpen
+    dashboardOpen = !dashboardOpen
+    layoutHarnessView()
+    if (dashboardOpen) {
+      // 以当前会话为基线（外壳打开面板时也会立即刷新一次），后续轮询只对
+      // “会话发生变化”推送刷新事件，避免打开面板时的冗余刷新。
+      lastDashboardSessionId = await getCurrentSessionId()
+      startDashboardWatcher()
+    } else {
+      stopDashboardWatcher()
+    }
+    return dashboardOpen
+  })
+
+  ipcMain.handle('desktop:dashboard-state', event => {
+    if (mainWindow && !mainWindow.isDestroyed() && event.sender !== mainWindow.webContents) return dashboardOpen
+    return dashboardOpen
+  })
+}
+
+registerDashboardIpc()
+
+// ---------------------------------------------------------------------------
+// 会话切换监听：仪表盘展开期间轮询前端注入的当前会话 id。前端每次
+// sessions.open() 都会同步更新 window.__dshCurrentSession（上游 runtime 注入），
+// 因此一旦检测到切换就推送刷新事件，仪表盘立即重算目标会话的统计——
+// 无需在目标会话里发送任何消息。
+// ---------------------------------------------------------------------------
+const DASHBOARD_POLL_INTERVAL_MS = 1000
+let dashboardWatcherTimer
+let lastDashboardSessionId
+
+async function pollDashboardSession() {
+  if (!dashboardOpen || !harnessView || harnessView.webContents.isDestroyed()) return
+  let sessionId
+  try {
+    sessionId = await getCurrentSessionId()
+  } catch {
+    return
+  }
+  if (sessionId === lastDashboardSessionId) return
+  lastDashboardSessionId = sessionId
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('desktop:dashboard-refresh', sessionId)
+  }
+}
+
+function startDashboardWatcher() {
+  if (dashboardWatcherTimer) return
+  dashboardWatcherTimer = setInterval(() => {
+    void pollDashboardSession()
+  }, DASHBOARD_POLL_INTERVAL_MS)
+}
+
+function stopDashboardWatcher() {
+  clearInterval(dashboardWatcherTimer)
+  dashboardWatcherTimer = undefined
+  lastDashboardSessionId = undefined
+}
