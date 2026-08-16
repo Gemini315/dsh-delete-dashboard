@@ -18,7 +18,14 @@ const PRODUCT_NAME = 'DeepSeek Harness Desktop'
 const TITLE_BAR_HEIGHT = 42
 const STARTUP_TIMEOUT_MS = 90_000
 const DASHBOARD_WIDTH = 288
-const DASHBOARD_PRICES = { inputPerM: 2, outputPerM: 8 }
+// DeepSeek v4-flash 新计费（2026-08-16 16:00 UTC 生效）：峰值/非峰值，USD / 1M tokens。
+// 峰值时段（UTC）：01:00-04:00 与 06:00-10:00；其余非峰值（= 峰值一半）。
+// 如需 v4-pro，把单价换成 PEAK/OFFPEAK_PRO 即可。
+const DASHBOARD_PRICES = {
+  peak: { cacheHit: 0.014, cacheMiss: 0.44, output: 1.32 },
+  offPeak: { cacheHit: 0.007, cacheMiss: 0.22, output: 0.66 },
+}
+const PEAK_HOUR_RANGES = [[1, 4], [6, 10]]
 let dashboardOpen = false
 
 let mainWindow
@@ -569,6 +576,7 @@ async function readSessionStats(sessionId) {
   if (!artifact) return { tokens: 0, cost: null, requests: 0, runtimeText: '—' }
   let promptTokens = 0
   let completionTokens = 0
+  let costUsd = 0
   let requests = 0
   let firstTime = Infinity
   let lastTime = 0
@@ -596,6 +604,17 @@ async function readSessionStats(sessionId) {
         if (chunk && chunk.type === 'usage' && chunk.usage) {
           promptTokens += Number(chunk.usage.inputTokens ?? 0) || 0
           completionTokens += Number(chunk.usage.outputTokens ?? 0) || 0
+          const input = Number(chunk.usage.inputTokens ?? 0) || 0
+          const output = Number(chunk.usage.outputTokens ?? 0) || 0
+          const cacheRead = Number(chunk.usage.cacheReadTokens ?? 0) || 0
+          const cacheWrite = Number(chunk.usage.cacheWriteTokens ?? 0) || 0
+          // 峰值/非峰值按该次请求的发生时间（UTC 小时）判定。
+          const utcHour = new Date(event.time ?? Date.now()).getUTCHours()
+          const isPeak = PEAK_HOUR_RANGES.some(([s, e]) => utcHour >= s && utcHour < e)
+          const p = isPeak ? DASHBOARD_PRICES.peak : DASHBOARD_PRICES.offPeak
+          costUsd += input / 1e6 * p.cacheMiss
+          costUsd += (cacheRead + cacheWrite) / 1e6 * p.cacheHit
+          costUsd += output / 1e6 * p.output
         }
       }
       if (typeof event.time === 'number') {
@@ -605,7 +624,7 @@ async function readSessionStats(sessionId) {
     }
   } catch { /* 统计失败时返回零值 */ }
   const total = promptTokens + completionTokens
-  const cost = promptTokens / 1e6 * DASHBOARD_PRICES.inputPerM + completionTokens / 1e6 * DASHBOARD_PRICES.outputPerM
+  const cost = costUsd
   const runtimeMs = lastTime - firstTime
   const runtimeText = runtimeMs > 0 ? `${Math.floor(runtimeMs / 60000)}分${Math.floor((runtimeMs % 60000) / 1000)}秒` : '—'
   return { tokens: total, cost, requests, runtimeText }
