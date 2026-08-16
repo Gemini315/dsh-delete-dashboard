@@ -27,8 +27,8 @@
 > 适合开发者。注意：源码构建默认使用官方 dsh 基础（**不含「删除消息」等定制功能**，定制功能随 Release 安装包提供）。
 
 ```powershell
-git clone https://github.com/cc1252/deepseek-harness-desktop.git
-cd deepseek-harness-desktop
+git clone https://github.com/Gemini315/dsh-delete-dashboard.git
+cd dsh-delete-dashboard
 npm install
 npm run setup        # 下载并准备 dsh 运行时
 npm run build:windows
