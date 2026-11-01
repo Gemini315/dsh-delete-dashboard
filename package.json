@@ -26,7 +26,7 @@
     "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1"
   },
   "dependencies": {
-    "koffi": "^3.1.5"
+    "koffi": "^3.3.5"
   },
   "devDependencies": {
     "electron": "43.4.0",
